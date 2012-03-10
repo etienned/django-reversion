@@ -6,7 +6,7 @@ These tests require Python 2.5 to run.
 
 from __future__ import with_statement
 
-import datetime
+import datetime, os
 
 from django.db import models
 from django.test import TestCase
@@ -20,7 +20,7 @@ from django.http import HttpResponse
 from django.utils.unittest import skipUnless
 
 import reversion
-from reversion.revisions import RegistrationError, RevisionManager
+from reversion.revisions import RegistrationError, RevisionManager, RevisionManagementError
 from reversion.models import Revision, Version, VERSION_ADD, VERSION_CHANGE, VERSION_DELETE
 from reversion.middleware import RevisionMiddleware
 
@@ -101,6 +101,11 @@ class RegistrationTest(TestCase):
 class ReversionTestBase(TestCase):
 
     def setUp(self):
+        # Unregister all registered models.
+        self.initial_registered_models = []
+        for registered_model in reversion.get_registered_models():
+            self.initial_registered_models.append((registered_model, reversion.get_adapter(registered_model).__class__))
+            reversion.unregister(registered_model)
         # Register the test models.
         reversion.register(ReversionTestModel1)
         reversion.register(ReversionTestModel2)
@@ -136,6 +141,10 @@ class ReversionTestBase(TestCase):
         del self.user
         # Delete the revisions index.
         Revision.objects.all().delete()
+        # Re-register initial registered models.
+        for initial_model, adapter in self.initial_registered_models:
+            reversion.register(initial_model, adapter_cls=adapter)
+        del self.initial_registered_models
 
 
 class RevisionTestBase(ReversionTestBase):
@@ -156,6 +165,18 @@ class InternalsTest(RevisionTestBase):
         with reversion.create_revision():
             self.test11.name = "model1 instance1 version2"
             self.test11.save()
+        self.assertEqual(Revision.objects.count(), 2)
+        self.assertEqual(Version.objects.count(), 5)
+    
+    def testManualRevisionManagement(self):
+        # When manage manually is on, no revisions created.
+        with reversion.create_revision(manage_manually=True):
+            self.test11.name = "model1 instance1 version2"
+            self.test11.save()
+        self.assertEqual(Revision.objects.count(), 1)
+        self.assertEqual(Version.objects.count(), 4)
+        # Save a manual revision.
+        reversion.default_revision_manager.save_revision([self.test11])
         self.assertEqual(Revision.objects.count(), 2)
         self.assertEqual(Version.objects.count(), 5)
         
@@ -642,6 +663,10 @@ class VersionAdminTest(TestCase):
     urls = "reversion.tests"
 
     def setUp(self):
+        self.old_TEMPLATE_DIRS = settings.TEMPLATE_DIRS
+        settings.TEMPLATE_DIRS = (
+            os.path.join(os.path.dirname(admin.__file__), "templates"),
+        )
         self.user = User(
             username = "foo",
             is_staff = True,
@@ -718,6 +743,7 @@ class VersionAdminTest(TestCase):
         self.user.delete()
         del self.user
         ChildTestAdminModel.objects.all().delete()
+        settings.TEMPLATE_DIRS = self.old_TEMPLATE_DIRS
 
 
 # Tests for optional patch generation methods.
