@@ -47,6 +47,10 @@ class VersionAdmin(admin.ModelAdmin):
     # Whether to ignore duplicate revision data.
     ignore_duplicate_revisions = False
     
+    # Whether to automatically save initial revision when there's none
+    # before saving a new revision.
+    auto_initial_revisions = False
+    
     # If True, then the default ordering of object_history and recover lists will be reversed.
     history_latest_first = False
     
@@ -363,6 +367,7 @@ class VersionAdmin(admin.ModelAdmin):
     @revision_context_manager.create_revision()
     def change_view(self, *args, **kwargs):
         """Modifies an existing model."""
+        revision_context_manager.set_auto_initial(self.auto_initial_revisions)
         return super(VersionAdmin, self).change_view(*args, **kwargs)
         
     @transaction.commit_on_success
@@ -379,6 +384,7 @@ class VersionAdmin(admin.ModelAdmin):
         context = {"recoverlist_url": reverse("%s:%s_%s_recoverlist" % (self.admin_site.name, opts.app_label, opts.module_name)),
                    "add_url": reverse("%s:%s_%s_add" % (self.admin_site.name, opts.app_label, opts.module_name)),}
         context.update(extra_context or {})
+        revision_context_manager.set_auto_initial(self.auto_initial_revisions)
         return super(VersionAdmin, self).changelist_view(request, context)
     
     def history_view(self, request, object_id, extra_context=None):
