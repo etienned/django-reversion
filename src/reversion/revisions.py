@@ -445,12 +445,13 @@ class RevisionManager(object):
                 for obj in objects
             )
             
-        # Disable ignore duplicates if there's a delete
-        if VERSION_DELETE in (version_data['type'] for version_data in objects.itervalues()):
-            ignore_duplicates = False
-
         # Create the revision.
         if objects:
+            if ignore_duplicates:
+                # Disable ignore duplicates if there's a delete
+                if VERSION_DELETE in (version_data['type'] for version_data in objects.itervalues()):
+                    ignore_duplicates = False
+
             # Follow relationships.
             for obj in self._follow_relationships(objects.iterkeys()):
                 if not obj in objects:
