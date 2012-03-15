@@ -373,6 +373,192 @@ class ApiTest(RevisionTestBase):
         self.assertEqual(revision.revisionmeta.age, 5)
 
 
+class AutoInitialTest(ReversionTestBase):
+    def setUp(self):
+        super(AutoInitialTest, self).setUp()
+        # Create some unsaved test data.
+        self.test13 = ReversionTestModel1(name="model1 instance3 version1")
+
+    def tearDown(self):
+        super(AutoInitialTest, self).tearDown()
+        del self.test13
+
+    def testDontSaveAutoInitialOnAdd(self):
+        with reversion.create_revision():
+            self.assertFalse(reversion.get_auto_initial())
+            reversion.set_auto_initial(True)
+            self.assertTrue(reversion.get_auto_initial())
+            self.test13.name = "model1 instance3 version2"
+            self.test13.save()
+        # Test that no initial is saved because it's a new object
+        self.assertEqual(reversion.get_for_object(self.test13).count(), 1)
+        
+    def testCanSaveAutoInitialOnChange(self):
+        self.assertEqual(reversion.get_for_object(self.test11).count(), 0)
+        with reversion.create_revision():
+            reversion.set_auto_initial(True)
+            self.test11.name = "model1 instance1 version2"
+            self.test11.save()
+            self.test12.save()
+            self.test21.save()
+            self.test22.save()
+        # Test that an initial is save because there's a data change and no previous revision
+        self.assertEqual(reversion.get_for_object(self.test11).count(), 2)
+        
+    def testDontSaveAutoInitialOnChange(self):
+        self.assertEqual(reversion.get_for_object(self.test11).count(), 0)
+        with reversion.create_revision():
+            self.assertFalse(reversion.get_auto_initial())
+            reversion.set_auto_initial(True)
+            self.assertTrue(reversion.get_auto_initial())
+            self.test11.save()
+            self.test12.save()
+            self.test21.save()
+            self.test22.save()
+        # Test that no initial is saved because there's no data change
+        self.assertEqual(reversion.get_for_object(self.test11).count(), 1)
+        with reversion.create_revision():
+            self.assertFalse(reversion.get_auto_initial())
+            reversion.set_auto_initial(True)
+            self.assertTrue(reversion.get_auto_initial())
+            self.test11.name = "model1 instance1 version3"
+            self.test11.save()
+        # Test that no initial is saved because there's a previous revision
+        self.assertEqual(reversion.get_for_object(self.test11).count(), 2)
+        
+    def testCanSaveAutoInitialOnDelete(self):
+        self.assertEqual(Version.objects.count(), 0)
+        with reversion.create_revision():
+            reversion.set_auto_initial(True)
+            self.test11.delete()
+        # Test that an initial is saved on delete
+        versions = reversion.get_deleted(ReversionTestModel1)
+        self.assertEqual(len(versions), 1)
+        self.assertEqual(Version.objects.filter(type=VERSION_ADD).count(), 1)
+        self.assertEqual(Version.objects.filter(type=VERSION_CHANGE).count(), 0)
+        self.assertEqual(Version.objects.filter(type=VERSION_DELETE).count(), 1)
+        self.assertEqual(reversion.get_for_object(self.test12).count(), 0)
+        with reversion.create_revision():
+            reversion.set_auto_initial(True)
+            self.test12.name = "model1 instance2 version2"
+            self.test12.delete()
+        # Test that an initial is saved on delete
+        versions = reversion.get_deleted(ReversionTestModel1)
+        self.assertEqual(len(versions), 2)
+        self.assertEqual(Version.objects.filter(type=VERSION_ADD).count(), 2)
+        self.assertEqual(Version.objects.filter(type=VERSION_CHANGE).count(), 0)
+        self.assertEqual(Version.objects.filter(type=VERSION_DELETE).count(), 2)
+    
+    def testDontSaveAutoInitialOnDelete(self):
+        self.assertEqual(Version.objects.count(), 0)
+        with reversion.create_revision():
+            self.test11.save()
+            self.test12.save()
+            self.test21.save()
+            self.test22.save()
+        self.assertEqual(reversion.get_for_object(self.test11).count(), 1)
+        with reversion.create_revision():
+            reversion.set_auto_initial(True)
+            self.test11.delete()
+        # Test that no initial is saved on delete
+        versions = reversion.get_deleted(ReversionTestModel1)
+        self.assertEqual(len(versions), 1)
+        self.assertEqual(Version.objects.filter(type=VERSION_ADD).count(), 0)
+        self.assertEqual(Version.objects.filter(type=VERSION_CHANGE).count(), 4)
+        self.assertEqual(Version.objects.filter(type=VERSION_DELETE).count(), 1)
+    
+    # Now with ignore_duplicates activated
+    
+    def testDontSaveAutoInitialIgnoreDuplicatesOnAdd(self):
+        with reversion.create_revision():
+            reversion.set_ignore_duplicates(True)
+            reversion.set_auto_initial(True)
+            self.test13.name = "model1 instance3 version2"
+            self.test13.save()
+        # Test that no revision at all is saved because it's a new object
+        # and ignore duplicates is activated
+        self.assertEqual(reversion.get_for_object(self.test13).count(), 0)
+        
+    def testCanSaveAutoInitialIgnoreDuplicatesOnChange(self):
+        self.assertEqual(reversion.get_for_object(self.test11).count(), 0)
+        with reversion.create_revision():
+            reversion.set_ignore_duplicates(True)
+            reversion.set_auto_initial(True)
+            self.test11.name = "model1 instance1 version2"
+            self.test11.save()
+            self.test12.save()
+            self.test21.save()
+            self.test22.save()
+        # Test that an initial is save because there's a data change and no previous revision
+        self.assertEqual(reversion.get_for_object(self.test11).count(), 2)
+        
+    def testDontSaveAutoInitialIgnoreDuplicatesOnChange(self):
+        self.assertEqual(reversion.get_for_object(self.test11).count(), 0)
+        with reversion.create_revision():
+            reversion.set_ignore_duplicates(True)
+            reversion.set_auto_initial(True)
+            self.test11.save()
+            self.test12.save()
+            self.test21.save()
+            self.test22.save()
+        # Test that no revision at all is saved because there's no data change
+        # and ignore duplicates is activated
+        self.assertEqual(reversion.get_for_object(self.test11).count(), 0)
+        with reversion.create_revision():
+            reversion.set_ignore_duplicates(True)
+            reversion.set_auto_initial(True)
+            self.test11.name = "model1 instance1 version3"
+            self.test11.save()
+        # Test that initial and normal revision are saved because there's data change
+        self.assertEqual(reversion.get_for_object(self.test11).count(), 2)
+        
+    def testCanSaveAutoInitialIgnoreDuplicatesOnDelete(self):
+        self.assertEqual(Version.objects.count(), 0)
+        with reversion.create_revision():
+            reversion.set_ignore_duplicates(True)
+            reversion.set_auto_initial(True)
+            self.test11.delete()
+        # Test that an initial is saved on delete
+        versions = reversion.get_deleted(ReversionTestModel1)
+        self.assertEqual(len(versions), 1)
+        self.assertEqual(Version.objects.filter(type=VERSION_ADD).count(), 1)
+        self.assertEqual(Version.objects.filter(type=VERSION_CHANGE).count(), 0)
+        self.assertEqual(Version.objects.filter(type=VERSION_DELETE).count(), 1)
+        self.assertEqual(reversion.get_for_object(self.test12).count(), 0)
+        with reversion.create_revision():
+            reversion.set_ignore_duplicates(True)
+            reversion.set_auto_initial(True)
+            self.test12.name = "model1 instance2 version2"
+            self.test12.delete()
+        # Test that an initial is saved on delete
+        versions = reversion.get_deleted(ReversionTestModel1)
+        self.assertEqual(len(versions), 2)
+        self.assertEqual(Version.objects.filter(type=VERSION_ADD).count(), 2)
+        self.assertEqual(Version.objects.filter(type=VERSION_CHANGE).count(), 0)
+        self.assertEqual(Version.objects.filter(type=VERSION_DELETE).count(), 2)
+    
+    def testDontSaveAutoInitialIgnoreDuplicatesOnDelete(self):
+        self.assertEqual(Version.objects.count(), 0)
+        with reversion.create_revision():
+            self.test11.save()
+            self.test12.save()
+            self.test21.save()
+            self.test22.save()
+        self.assertEqual(reversion.get_for_object(self.test11).count(), 1)
+        with reversion.create_revision():
+            reversion.set_ignore_duplicates(True)
+            reversion.set_auto_initial(True)
+            self.test11.delete()
+        # Test that no initial is saved on delete
+        versions = reversion.get_deleted(ReversionTestModel1)
+        self.assertEqual(len(versions), 1)
+        self.assertEqual(Version.objects.filter(type=VERSION_ADD).count(), 0)
+        self.assertEqual(Version.objects.filter(type=VERSION_CHANGE).count(), 4)
+        self.assertEqual(Version.objects.filter(type=VERSION_DELETE).count(), 1)
+        
+        
+
+
 class ReversionTestModel1Child(ReversionTestModel1):
 
     pass
@@ -628,6 +814,24 @@ class ChildTestAdminModelAdmin(reversion.VersionAdmin):
 site.register(ChildTestAdminModel, ChildTestAdminModelAdmin)
 
 
+class AutoInitialAdminModel(models.Model):
+
+    name = models.CharField(
+        max_length = 200,
+    )
+    
+    class Meta:
+        app_label = "auth"  # Hack: Cannot use an app_label that is under South control, due to http://south.aeracode.org/ticket/520
+
+
+class AutoInitialTestAdminModelAdmin(reversion.VersionAdmin):
+
+    ignore_duplicate_revisions = True
+    auto_initial_revisions = True
+
+site.register(AutoInitialAdminModel, AutoInitialTestAdminModelAdmin)
+
+
 urlpatterns = patterns("",
 
     url("^success/$", save_revision_view),
@@ -743,6 +947,92 @@ class VersionAdminTest(TestCase):
         self.user.delete()
         del self.user
         ChildTestAdminModel.objects.all().delete()
+        settings.TEMPLATE_DIRS = self.old_TEMPLATE_DIRS
+
+
+class VersionAdminAutoInitialTest(TestCase):
+
+    urls = "reversion.tests"
+
+    def setUp(self):
+        self.old_TEMPLATE_DIRS = settings.TEMPLATE_DIRS
+        settings.TEMPLATE_DIRS = (
+            os.path.join(os.path.dirname(admin.__file__), "templates"),
+        )
+        self.user = User(
+            username = "foo",
+            is_staff = True,
+            is_superuser = True,
+        )
+        self.user.set_password("bar")
+        self.user.save()
+        self.client.login(username="foo", password="bar")
+
+    @skipUnless('django.contrib.admin' in settings.INSTALLED_APPS,
+                "django.contrib.admin not activated")
+    def testRevisionsSavedNotOnAddButOnChange(self):
+        self.assertEqual(AutoInitialAdminModel.objects.count(), 0)
+        # Create an instance via the admin.
+        response = self.client.post("/admin/auth/autoinitialadminmodel/add/", {
+            "name": "instance1 version1",
+            "_continue": 1,
+        })
+        self.assertEqual(response.status_code, 302)
+        obj_pk = response["Location"].split("/")[-2]
+        obj = AutoInitialAdminModel.objects.get(id=obj_pk)
+        # Check that no version is created.
+        versions = reversion.get_for_object(obj)
+        self.assertEqual(versions.count(), 0)
+        # Save a new version.
+        response = self.client.post("/admin/auth/autoinitialadminmodel/%s/" % obj_pk, {
+            "name": "instance1 version2",
+            "_continue": 1,
+        })
+        self.assertEqual(response.status_code, 302)
+        # Check that 2 versions were created.
+        versions = reversion.get_for_object(obj)
+        self.assertEqual(versions.count(), 2)
+        self.assertEqual(versions[0].field_dict["name"], "instance1 version2")
+        self.assertEqual(versions[1].field_dict["name"], "instance1 version1")
+        # Delete the object.
+        response = self.client.post("/admin/auth/autoinitialadminmodel/%s/delete/" % obj_pk, {
+            "_continue": 1,
+        })
+        self.assertEqual(response.status_code, 302)
+        # Check that only 1 version is created.
+        versions = reversion.get_for_object(obj)
+        self.assertEqual(versions.count(), 3)
+        
+        
+    @skipUnless('django.contrib.admin' in settings.INSTALLED_APPS,
+                "django.contrib.admin not activated")
+    def testRevisionsSavedOnDelete(self):
+        self.assertEqual(AutoInitialAdminModel.objects.count(), 0)
+        # Create an instance via the admin.
+        response = self.client.post("/admin/auth/autoinitialadminmodel/add/", {
+            "name": "instance1 version1",
+            "_continue": 1,
+        })
+        self.assertEqual(response.status_code, 302)
+        obj_pk = response["Location"].split("/")[-2]
+        obj = AutoInitialAdminModel.objects.get(id=obj_pk)
+        # Check that no version is created.
+        versions = reversion.get_for_object(obj)
+        self.assertEqual(versions.count(), 0)
+        # Delete the object.
+        response = self.client.post("/admin/auth/autoinitialadminmodel/%s/delete/" % obj_pk, {
+            "_continue": 1,
+        })
+        self.assertEqual(response.status_code, 302)
+        # Check that 2 versions were created.
+        versions = reversion.get_for_object(obj)
+        self.assertEqual(versions.count(), 2)
+                
+    def tearDown(self):
+        self.client.logout()
+        self.user.delete()
+        del self.user
+        AutoInitialAdminModel.objects.all().delete()
         settings.TEMPLATE_DIRS = self.old_TEMPLATE_DIRS
 
 

@@ -47,6 +47,10 @@ class VersionAdmin(admin.ModelAdmin):
     # Whether to ignore duplicate revision data.
     ignore_duplicate_revisions = False
     
+    # Whether to automatically save initial revision when there's none
+    # before saving a new revision.
+    auto_initial_revisions = False
+    
     # If True, then the default ordering of object_history and recover lists will be reversed.
     history_latest_first = False
     
@@ -128,6 +132,7 @@ class VersionAdmin(admin.ModelAdmin):
             user = request.user,
             comment = _(u"Initial version."),
             ignore_duplicates = self.ignore_duplicate_revisions,
+            auto_initial = self.auto_initial_revisions,
             db = self.revision_context_manager.get_db(),
         )
         
@@ -140,18 +145,22 @@ class VersionAdmin(admin.ModelAdmin):
             user = request.user,
             comment = message,
             ignore_duplicates = self.ignore_duplicate_revisions,
+            auto_initial = self.auto_initial_revisions,
             db = self.revision_context_manager.get_db(),
         )
     
     def log_deletion(self, request, object, object_repr):
         """Sets the version meta information."""
         super(VersionAdmin, self).log_deletion(request, object, object_repr)
+        self.revision_context_manager.set_auto_initial(self.auto_initial_revisions)
+        self.revision_manager.auto_create_initial(object, on_delete=True)
         adapter = self.revision_manager.get_adapter(self.model)
         self.revision_manager.save_revision(
             {object: adapter.get_version_data(object, VERSION_DELETE)},
             user = request.user,
             comment = _(u"Deleted %(verbose_name)s.") % {"verbose_name": self.model._meta.verbose_name},
             ignore_duplicates = self.ignore_duplicate_revisions,
+            auto_initial = self.auto_initial_revisions,
             db = self.revision_context_manager.get_db(),
         )
     
@@ -378,12 +387,19 @@ class VersionAdmin(admin.ModelAdmin):
         context.update(extra_context or {})
         return self.render_revision_form(request, obj, version, context, revert=True)
     
+    @transaction.commit_on_success
+    def change_view(self, *args, **kwargs):
+        """Modifies an existing model."""
+        self.revision_context_manager.set_auto_initial(self.auto_initial_revisions)
+        return super(VersionAdmin, self).change_view(*args, **kwargs)
+        
     def changelist_view(self, request, extra_context=None):
         """Renders the change view."""
         opts = self.model._meta
         context = {"recoverlist_url": reverse("%s:%s_%s_recoverlist" % (self.admin_site.name, opts.app_label, opts.module_name)),
                    "add_url": reverse("%s:%s_%s_add" % (self.admin_site.name, opts.app_label, opts.module_name)),}
         context.update(extra_context or {})
+        self.revision_context_manager.set_auto_initial(self.auto_initial_revisions)
         return super(VersionAdmin, self).changelist_view(request, context)
     
     def history_view(self, request, object_id, extra_context=None):

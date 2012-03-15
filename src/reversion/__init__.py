@@ -64,6 +64,8 @@ set_comment = revision_context_manager.set_comment
 add_meta = revision_context_manager.add_meta
 get_ignore_duplicates = revision_context_manager.get_ignore_duplicates
 set_ignore_duplicates = revision_context_manager.set_ignore_duplicates
+get_auto_initial = revision_context_manager.get_auto_initial
+set_auto_initial = revision_context_manager.set_auto_initial
 
 
 # Low level API.

@@ -17,7 +17,8 @@ from django.core.signals import request_finished
 from django.db import models, DEFAULT_DB_ALIAS, connection
 from django.db.models import Q, Max
 from django.db.models.query import QuerySet
-from django.db.models.signals import post_save, pre_delete
+from django.db.models.signals import post_save, pre_delete, pre_save
+from django.utils.translation import ugettext as _
 
 from reversion.models import Revision, Version, VERSION_ADD, VERSION_CHANGE, VERSION_DELETE, has_int_pk, deprecated
 
@@ -134,6 +135,7 @@ class RevisionContextManager(local):
         self._is_invalid = False
         self._meta = []
         self._ignore_duplicates = False
+        self._auto_initial = False
         self._db = None
     
     def is_active(self):
@@ -179,6 +181,7 @@ class RevisionContextManager(local):
                             comment = self._comment,
                             meta = self._meta,
                             ignore_duplicates = self._ignore_duplicates,
+                            auto_initial = self._auto_initial,
                             db = self._db,
                         )
             finally:
@@ -246,6 +249,16 @@ class RevisionContextManager(local):
         self._assert_active()
         return self._ignore_duplicates
     
+    def set_auto_initial(self, auto_initial):
+        """Sets whether to ignore duplicate revisions."""
+        self._assert_active()
+        self._auto_initial = auto_initial
+        
+    def get_auto_initial(self):
+        """Gets whether to ignore duplicate revisions."""
+        self._assert_active()
+        return self._auto_initial
+    
     # Signal receivers.
     
     def _request_finished_receiver(self, **kwargs):
@@ -310,6 +323,9 @@ class RevisionContext(object):
 
 # A shared, thread-safe context manager.
 revision_context_manager = RevisionContextManager()
+
+# A shared, thread-safe context manager for automatic initial revision.
+auto_initial_context_manager = RevisionContextManager()
 
 
 class RegistrationError(Exception):
@@ -378,6 +394,7 @@ class RevisionManager(object):
         # Perform the registration.
         adapter_obj = adapter_cls(model)
         self._registered_models[model] = adapter_obj
+        pre_save.connect(self._pre_save_receiver, model)
         # Connect to the post save signal of the model.
         post_save.connect(self._post_save_receiver, model)
         pre_delete.connect(self._pre_delete_receiver, model)
@@ -393,6 +410,7 @@ class RevisionManager(object):
         if not self.is_registered(model):
             raise RegistrationError, "%r has not been registered with django-reversion" % model
         del self._registered_models[model]
+        pre_save.disconnect(self._pre_save_receiver, model)
         post_save.disconnect(self._post_save_receiver, model)
         pre_delete.disconnect(self._pre_delete_receiver, model)
     
@@ -417,7 +435,7 @@ class RevisionManager(object):
             revision__manager_slug = self._manager_slug,
         ).select_related("revision")
         
-    def save_revision(self, objects, ignore_duplicates=False, user=None, comment="", meta=(), db=None):
+    def save_revision(self, objects, ignore_duplicates=False, user=None, comment="", meta=(), db=None, auto_initial=False):
         """Saves a new revision."""
         db = db or DEFAULT_DB_ALIAS
         # Adapt the objects to a dict.
@@ -426,6 +444,11 @@ class RevisionManager(object):
                 (obj, self.get_adapter(obj.__class__).get_version_data(obj, VERSION_CHANGE, db))
                 for obj in objects
             )
+            
+        # Disable ignore duplicates if there's a delete
+        if VERSION_DELETE in (version_data['type'] for version_data in objects.itervalues()):
+            ignore_duplicates = False
+
         # Create the revision.
         if objects:
             # Follow relationships.
@@ -449,6 +472,8 @@ class RevisionManager(object):
                         all_serialized_data = [version.serialized_data for version in new_versions]
                         if sorted(previous_versions) == sorted(all_serialized_data):
                             save_revision = False
+                elif auto_initial:
+                    save_revision = False
             # Only save if we're always saving, or have changes.
             if save_revision:
                 # Save a new revision.
@@ -492,6 +517,11 @@ class RevisionManager(object):
     ignore_duplicates = property(
         deprecated("revision.ignore_duplicates", "reversion.get_ignore_duplicates()")(lambda self: self._revision_context_manager.get_ignore_duplicates()),
         deprecated("revision.ignore_duplicates", "reversion.set_ignore_duplicates()")(lambda self, ignore_duplicates: self._revision_context_manager.set_ignore_duplicates(ignore_duplicates))
+    )
+    
+    auto_initial = property(
+        deprecated("revision.auto_initial", "reversion.get_auto_initial()")(lambda self: self._revision_context_manager.get_auto_initial()),
+        deprecated("revision.auto_initial", "reversion.set_auto_initial()")(lambda self, auto_initial: self._revision_context_manager.set_auto_initial(auto_initial))
     )
     
     # Revision management API.
@@ -590,7 +620,37 @@ class RevisionManager(object):
         # Return the deleted versions!
         return self._get_versions(db).filter(pk__in=deleted_version_pks).order_by("-pk")
         
+    
+    def auto_create_initial(self, instance, on_delete=False):
+        """
+        Create initial revision if auto-initial is activated, their's no
+        revision already saved and data has really changed.
+        """
+        if (self._revision_context_manager.is_active()
+                and self._revision_context_manager.get_auto_initial()
+                and instance.pk is not None):
+            versions = self.get_for_object(instance, self._revision_context_manager._db)
+            if not versions.exists():
+                model = instance.__class__
+                try:
+                    prev_instance = model._default_manager.db_manager(self._revision_context_manager._db).get(pk=instance.pk)
+                except sender.DoesNotExist:
+                    # It's a new object so pass
+                    pass
+                else:
+                    adapter = self.get_adapter(model)
+                    version_serialized_data = adapter.get_serialized_data(instance)
+                    prev_version_data = adapter.get_version_data(prev_instance, VERSION_ADD, self._revision_context_manager._db)
+                    if on_delete or version_serialized_data != prev_version_data["serialized_data"]:
+                        # Data has changed so save the initial
+                        with auto_initial_context_manager.create_revision():
+                            auto_initial_context_manager.add_to_context(self, prev_instance, prev_version_data)
+                            auto_initial_context_manager.set_comment(_(u"Initial version."))
+    
     # Signal receivers.
+        
+    def _pre_save_receiver(self, sender, instance, **kwargs):
+        self.auto_create_initial(instance)
         
     def _post_save_receiver(self, instance, created, **kwargs):
         """Adds registered models to the current revision, if any."""
@@ -605,6 +665,7 @@ class RevisionManager(object):
     def _pre_delete_receiver(self, instance, **kwargs):
         """Adds registered models to the current revision, if any."""
         if self._revision_context_manager.is_active() and not self._revision_context_manager.is_managing_manually():
+            self.auto_create_initial(instance, on_delete=True)
             adapter = self.get_adapter(instance.__class__)
             version_data = adapter.get_version_data(instance, VERSION_DELETE, self._revision_context_manager._db)
             self._revision_context_manager.add_to_context(self, instance, version_data)
