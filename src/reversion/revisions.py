@@ -122,6 +122,7 @@ class RevisionContextManager(local):
     
     def __init__(self):
         """Initializes the revision state."""
+        self._pre_save_hooked_models = {}
         self.clear()
         # Connect to the request finished signal.
         request_finished.connect(self._request_finished_receiver)
@@ -249,10 +250,15 @@ class RevisionContextManager(local):
         self._assert_active()
         return self._ignore_duplicates
     
-    def set_auto_initial(self, auto_initial):
+    def set_auto_initial(self, auto_initial, models):
         """Sets whether to ignore duplicate revisions."""
         self._assert_active()
         self._auto_initial = auto_initial
+        for model in models:
+            pre_save_receiver = self._pre_save_hooked_models.get(model)
+            if pre_save_receiver:
+                pre_save.connect(pre_save_receiver, model)
+                self._pre_save_hooked_models[model] = None
         
     def get_auto_initial(self):
         """Gets whether to ignore duplicate revisions."""
@@ -394,7 +400,8 @@ class RevisionManager(object):
         # Perform the registration.
         adapter_obj = adapter_cls(model)
         self._registered_models[model] = adapter_obj
-        pre_save.connect(self._pre_save_receiver, model)
+        # Lazily connect the pre_save signal
+        self._revision_context_manager._pre_save_hooked_models[model] = self._pre_save_receiver
         # Connect to the post save signal of the model.
         post_save.connect(self._post_save_receiver, model)
         pre_delete.connect(self._pre_delete_receiver, model)
@@ -410,6 +417,7 @@ class RevisionManager(object):
         if not self.is_registered(model):
             raise RegistrationError, "%r has not been registered with django-reversion" % model
         del self._registered_models[model]
+        self._revision_context_manager._pre_save_hooked_models.pop(model, None)
         pre_save.disconnect(self._pre_save_receiver, model)
         post_save.disconnect(self._post_save_receiver, model)
         pre_delete.disconnect(self._pre_delete_receiver, model)

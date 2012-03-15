@@ -64,6 +64,7 @@ class VersionAdmin(admin.ModelAdmin):
                 follow.append(field.name)
                 self._autoregister(parent_cls)
             self.revision_manager.register(model, follow=follow, format=self.reversion_format)
+            self._registered_models.add(model)
     
     @property
     def revision_context_manager(self):
@@ -74,6 +75,7 @@ class VersionAdmin(admin.ModelAdmin):
         """Initializes the VersionAdmin"""
         super(VersionAdmin, self).__init__(*args, **kwargs)
         # Automatically register models if required.
+        self._registered_models = set()
         if not self.revision_manager.is_registered(self.model):
             inline_fields = []
             for inline in self.inlines:
@@ -157,7 +159,7 @@ class VersionAdmin(admin.ModelAdmin):
         # If necessary create initial version here
         # (need to be done before the delete version)
         if self.auto_initial_revisions:
-            self.revision_context_manager.set_auto_initial(self.auto_initial_revisions)
+            self.revision_context_manager.set_auto_initial(self.auto_initial_revisions, self._registered_models)
             self.revision_manager.auto_create_initial(object, on_delete=True)
         adapter = self.revision_manager.get_adapter(self.model)
         self.revision_manager.save_revision(
@@ -395,7 +397,7 @@ class VersionAdmin(admin.ModelAdmin):
     @transaction.commit_on_success
     def change_view(self, *args, **kwargs):
         """Modifies an existing model."""
-        self.revision_context_manager.set_auto_initial(self.auto_initial_revisions)
+        self.revision_context_manager.set_auto_initial(self.auto_initial_revisions, self._registered_models)
         return super(VersionAdmin, self).change_view(*args, **kwargs)
         
     def changelist_view(self, request, extra_context=None):
@@ -404,7 +406,7 @@ class VersionAdmin(admin.ModelAdmin):
         context = {"recoverlist_url": reverse("%s:%s_%s_recoverlist" % (self.admin_site.name, opts.app_label, opts.module_name)),
                    "add_url": reverse("%s:%s_%s_add" % (self.admin_site.name, opts.app_label, opts.module_name)),}
         context.update(extra_context or {})
-        self.revision_context_manager.set_auto_initial(self.auto_initial_revisions)
+        self.revision_context_manager.set_auto_initial(self.auto_initial_revisions, self._registered_models)
         return super(VersionAdmin, self).changelist_view(request, context)
     
     def history_view(self, request, object_id, extra_context=None):

@@ -386,7 +386,7 @@ class AutoInitialTest(ReversionTestBase):
     def testDontSaveAutoInitialOnAdd(self):
         with reversion.create_revision():
             self.assertFalse(reversion.get_auto_initial())
-            reversion.set_auto_initial(True)
+            reversion.set_auto_initial(True, [ReversionTestModel1])
             self.assertTrue(reversion.get_auto_initial())
             self.test13.name = "model1 instance3 version2"
             self.test13.save()
@@ -396,7 +396,7 @@ class AutoInitialTest(ReversionTestBase):
     def testCanSaveAutoInitialOnChange(self):
         self.assertEqual(reversion.get_for_object(self.test11).count(), 0)
         with reversion.create_revision():
-            reversion.set_auto_initial(True)
+            reversion.set_auto_initial(True, [ReversionTestModel1, ReversionTestModel2])
             self.test11.name = "model1 instance1 version2"
             self.test11.save()
             self.test12.save()
@@ -409,7 +409,7 @@ class AutoInitialTest(ReversionTestBase):
         self.assertEqual(reversion.get_for_object(self.test11).count(), 0)
         with reversion.create_revision():
             self.assertFalse(reversion.get_auto_initial())
-            reversion.set_auto_initial(True)
+            reversion.set_auto_initial(True, [ReversionTestModel1, ReversionTestModel2])
             self.assertTrue(reversion.get_auto_initial())
             self.test11.save()
             self.test12.save()
@@ -419,7 +419,7 @@ class AutoInitialTest(ReversionTestBase):
         self.assertEqual(reversion.get_for_object(self.test11).count(), 1)
         with reversion.create_revision():
             self.assertFalse(reversion.get_auto_initial())
-            reversion.set_auto_initial(True)
+            reversion.set_auto_initial(True, [ReversionTestModel1])
             self.assertTrue(reversion.get_auto_initial())
             self.test11.name = "model1 instance1 version3"
             self.test11.save()
@@ -429,7 +429,7 @@ class AutoInitialTest(ReversionTestBase):
     def testCanSaveAutoInitialOnDelete(self):
         self.assertEqual(Version.objects.count(), 0)
         with reversion.create_revision():
-            reversion.set_auto_initial(True)
+            reversion.set_auto_initial(True, [ReversionTestModel1])
             self.test11.delete()
         # Test that an initial is saved on delete
         versions = reversion.get_deleted(ReversionTestModel1)
@@ -439,7 +439,7 @@ class AutoInitialTest(ReversionTestBase):
         self.assertEqual(Version.objects.filter(type=VERSION_DELETE).count(), 1)
         self.assertEqual(reversion.get_for_object(self.test12).count(), 0)
         with reversion.create_revision():
-            reversion.set_auto_initial(True)
+            reversion.set_auto_initial(True, [ReversionTestModel1])
             self.test12.name = "model1 instance2 version2"
             self.test12.delete()
         # Test that an initial is saved on delete
@@ -458,7 +458,7 @@ class AutoInitialTest(ReversionTestBase):
             self.test22.save()
         self.assertEqual(reversion.get_for_object(self.test11).count(), 1)
         with reversion.create_revision():
-            reversion.set_auto_initial(True)
+            reversion.set_auto_initial(True, [ReversionTestModel1])
             self.test11.delete()
         # Test that no initial is saved on delete
         versions = reversion.get_deleted(ReversionTestModel1)
@@ -472,7 +472,7 @@ class AutoInitialTest(ReversionTestBase):
     def testDontSaveAutoInitialIgnoreDuplicatesOnAdd(self):
         with reversion.create_revision():
             reversion.set_ignore_duplicates(True)
-            reversion.set_auto_initial(True)
+            reversion.set_auto_initial(True, [ReversionTestModel1])
             self.test13.name = "model1 instance3 version2"
             self.test13.save()
         # Test that no revision at all is saved because it's a new object
@@ -483,7 +483,7 @@ class AutoInitialTest(ReversionTestBase):
         self.assertEqual(reversion.get_for_object(self.test11).count(), 0)
         with reversion.create_revision():
             reversion.set_ignore_duplicates(True)
-            reversion.set_auto_initial(True)
+            reversion.set_auto_initial(True, [ReversionTestModel1, ReversionTestModel2])
             self.test11.name = "model1 instance1 version2"
             self.test11.save()
             self.test12.save()
@@ -496,7 +496,7 @@ class AutoInitialTest(ReversionTestBase):
         self.assertEqual(reversion.get_for_object(self.test11).count(), 0)
         with reversion.create_revision():
             reversion.set_ignore_duplicates(True)
-            reversion.set_auto_initial(True)
+            reversion.set_auto_initial(True, [ReversionTestModel1, ReversionTestModel2])
             self.test11.save()
             self.test12.save()
             self.test21.save()
@@ -506,7 +506,7 @@ class AutoInitialTest(ReversionTestBase):
         self.assertEqual(reversion.get_for_object(self.test11).count(), 0)
         with reversion.create_revision():
             reversion.set_ignore_duplicates(True)
-            reversion.set_auto_initial(True)
+            reversion.set_auto_initial(True, [ReversionTestModel1])
             self.test11.name = "model1 instance1 version3"
             self.test11.save()
         # Test that initial and normal revision are saved because there's data change
@@ -516,7 +516,7 @@ class AutoInitialTest(ReversionTestBase):
         self.assertEqual(Version.objects.count(), 0)
         with reversion.create_revision():
             reversion.set_ignore_duplicates(True)
-            reversion.set_auto_initial(True)
+            reversion.set_auto_initial(True, [ReversionTestModel1])
             self.test11.delete()
         # Test that an initial is saved on delete
         versions = reversion.get_deleted(ReversionTestModel1)
@@ -527,7 +527,7 @@ class AutoInitialTest(ReversionTestBase):
         self.assertEqual(reversion.get_for_object(self.test12).count(), 0)
         with reversion.create_revision():
             reversion.set_ignore_duplicates(True)
-            reversion.set_auto_initial(True)
+            reversion.set_auto_initial(True, [ReversionTestModel1])
             self.test12.name = "model1 instance2 version2"
             self.test12.delete()
         # Test that an initial is saved on delete
@@ -547,7 +547,7 @@ class AutoInitialTest(ReversionTestBase):
         self.assertEqual(reversion.get_for_object(self.test11).count(), 1)
         with reversion.create_revision():
             reversion.set_ignore_duplicates(True)
-            reversion.set_auto_initial(True)
+            reversion.set_auto_initial(True, [ReversionTestModel1])
             self.test11.delete()
         # Test that no initial is saved on delete
         versions = reversion.get_deleted(ReversionTestModel1)
