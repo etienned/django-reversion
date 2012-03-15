@@ -473,6 +473,7 @@ class RevisionManager(object):
                         if sorted(previous_versions) == sorted(all_serialized_data):
                             save_revision = False
                 elif auto_initial:
+                    # If there's no previous revision and auto_initial is activated, don't save the revision 
                     save_revision = False
             # Only save if we're always saving, or have changes.
             if save_revision:
