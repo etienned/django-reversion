@@ -451,6 +451,13 @@ class RevisionManager(object):
                 # Disable ignore duplicates if there's a delete
                 if VERSION_DELETE in (version_data['type'] for version_data in objects.itervalues()):
                     ignore_duplicates = False
+                # Small check if there's only added object to prevent unnecessary work
+                elif all((True if version_data == VERSION_ADD else False for version_data in objects.itervalues())):
+                    # If just adding new objects and auto_initial is enable, no need to save a revision
+                    if auto_initial:
+                        return
+                    # If just adding new objects it's impossible to have a duplicate so disable it.
+                    ignore_duplicates = False
 
             # Follow relationships.
             for obj in self._follow_relationships(objects.iterkeys()):
