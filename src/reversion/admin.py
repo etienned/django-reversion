@@ -126,13 +126,15 @@ class VersionAdmin(admin.ModelAdmin):
     def log_addition(self, request, object):
         """Sets the version meta information."""
         super(VersionAdmin, self).log_addition(request, object)
+        if self.ignore_duplicate_revisions and self.auto_initial_revisions:
+            return
         adapter = self.revision_manager.get_adapter(self.model)
         self.revision_manager.save_revision(
             {object: adapter.get_version_data(object, VERSION_ADD)},
             user = request.user,
             comment = _(u"Initial version."),
-            ignore_duplicates = self.ignore_duplicate_revisions,
-            auto_initial = self.auto_initial_revisions,
+            ignore_duplicates = False,
+            auto_initial = False,
             db = self.revision_context_manager.get_db(),
         )
         
@@ -152,15 +154,18 @@ class VersionAdmin(admin.ModelAdmin):
     def log_deletion(self, request, object, object_repr):
         """Sets the version meta information."""
         super(VersionAdmin, self).log_deletion(request, object, object_repr)
-        self.revision_context_manager.set_auto_initial(self.auto_initial_revisions)
-        self.revision_manager.auto_create_initial(object, on_delete=True)
+        # If necessary create initial version here
+        # (need to be done before the delete version)
+        if self.auto_initial_revisions:
+            self.revision_context_manager.set_auto_initial(self.auto_initial_revisions)
+            self.revision_manager.auto_create_initial(object, on_delete=True)
         adapter = self.revision_manager.get_adapter(self.model)
         self.revision_manager.save_revision(
             {object: adapter.get_version_data(object, VERSION_DELETE)},
             user = request.user,
             comment = _(u"Deleted %(verbose_name)s.") % {"verbose_name": self.model._meta.verbose_name},
-            ignore_duplicates = self.ignore_duplicate_revisions,
-            auto_initial = self.auto_initial_revisions,
+            ignore_duplicates = False,
+            auto_initial = False,
             db = self.revision_context_manager.get_db(),
         )
     
