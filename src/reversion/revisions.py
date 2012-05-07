@@ -460,7 +460,7 @@ class RevisionManager(object):
                 if VERSION_DELETE in (version_data['type'] for version_data in objects.itervalues()):
                     ignore_duplicates = False
                 # Small check if there's only added object to prevent unnecessary work
-                elif all((True if version_data == VERSION_ADD else False for version_data in objects.itervalues())):
+                elif all((True if version_data['type'] == VERSION_ADD else False for version_data in objects.itervalues())):
                     # If just adding new objects and auto_initial is enable, no need to save a revision
                     if auto_initial:
                         return
